@@ -172,6 +172,7 @@ CudaRasterizer::GeometryState CudaRasterizer::GeometryState::fromChunk(char*& ch
 CudaRasterizer::ImageState CudaRasterizer::ImageState::fromChunk(char*& chunk, size_t N)
 {
 	ImageState img;
+	obtain(chunk, img.accum_alpha, N, 128); // added
 	obtain(chunk, img.n_contrib, N, 128);
 	obtain(chunk, img.ranges, N, 128);
 	return img;
@@ -216,7 +217,7 @@ int CudaRasterizer::Rasterizer::forward(
 	const bool prefiltered,
 	float* out_color,
 	float* out_depth, 
-	float* out_alpha,
+	float* out_alpha, // called out_opacity in MonoGS. Take care of this naming difference
 	float* proj_2D,
 	float* conic_2D,
 	float* conic_2D_inv,
@@ -224,6 +225,7 @@ int CudaRasterizer::Rasterizer::forward(
 	float* weight_per_gs_pixel,
 	float* x_mu,
 	int* radii,
+	int* n_touched, // added
 	bool debug)
 {
 	const float focal_y = height / (2.0f * tan_fovy);
@@ -338,18 +340,22 @@ int CudaRasterizer::Rasterizer::forward(
 		width, height,
 		geomState.means2D,
 		feature_ptr,
-		geomState.depths,
+		geomState.depths, // this argument is in a different position from MonoGS. Take care of this.
 		geomState.conic_opacity,
 		out_alpha,
+		imgState.accum_alpha,
 		imgState.n_contrib,
 		background,
 		out_color,
 		out_depth,
+		// out_alpha, // added
 		proj_2D,
 		conic_2D,
 		gs_per_pixel,
 		weight_per_gs_pixel,
-		x_mu), debug);
+		x_mu, 
+		n_touched // added
+	), debug);
 
 	return num_rendered;
 }
@@ -370,6 +376,7 @@ void CudaRasterizer::Rasterizer::backward(
 	const float* cov3D_precomp,
 	const float* viewmatrix,
 	const float* projmatrix,
+    const float* projmatrix_raw, // added
 	const float* campos,
 	const float tan_fovx, float tan_fovy,
 	const int* radii,
@@ -395,6 +402,7 @@ void CudaRasterizer::Rasterizer::backward(
 	float* dL_dsh,
 	float* dL_dscale,
 	float* dL_drot,
+	float* dL_dtau, // added
 	bool debug)
 {
 	GeometryState geomState = GeometryState::fromChunk(geom_buffer, P);
@@ -417,6 +425,7 @@ void CudaRasterizer::Rasterizer::backward(
 	// If we were given precomputed colors and not SHs, use them.
 	const float* color_ptr = (colors_precomp != nullptr) ? colors_precomp : geomState.rgb;
 	const float* depth_ptr = geomState.depths;
+
 	CHECK_CUDA(BACKWARD::render(
 		tile_grid,
 		block,
@@ -429,6 +438,7 @@ void CudaRasterizer::Rasterizer::backward(
 		color_ptr,
 		depth_ptr,
 		alphas,
+		imgState.accum_alpha, // added
 		imgState.n_contrib,
 		dL_dpix,
 		dL_dpix_depth,
@@ -461,6 +471,7 @@ void CudaRasterizer::Rasterizer::backward(
 		cov3D_ptr,
 		viewmatrix,
 		projmatrix,
+        projmatrix_raw, // added
 		focal_x, focal_y,
 		tan_fovx, tan_fovy,
 		(glm::vec3*)campos,
@@ -478,5 +489,6 @@ void CudaRasterizer::Rasterizer::backward(
 		dL_dcov3D,
 		dL_dsh,
 		(glm::vec3*)dL_dscale,
-		(glm::vec4*)dL_drot), debug)
+		(glm::vec4*)dL_drot, 
+		dL_dtau), debug) // added dL_dtau
 }

@@ -21,7 +21,8 @@
 namespace BACKWARD
 {
 	void render(
-		const dim3 grid, dim3 block,
+		// const dim3 grid, dim3 block, // removed originally
+		const dim3 grid, const dim3 block, // added
 		const uint2* ranges,
 		const uint32_t* point_list,
 		int W, int H,
@@ -31,9 +32,10 @@ namespace BACKWARD
 		const float* colors,
 		const float* depths,
 		const float* alphas,
+		const float* final_Ts, // added
 		const uint32_t* n_contrib,
 		const float* dL_dpixels,
-		const float* dL_dpixel_depths,
+		const float* dL_dpixel_depths, // called dL_dpixels_depth in MonoGS. Take care of this difference.
 		const float* dL_dalphas,
 		float3* dL_dmean2D,
 		float4* dL_dconic2D,
@@ -60,6 +62,7 @@ namespace BACKWARD
 		const float* cov3Ds,
 		const float* view,
 		const float* proj,
+		const float* proj_raw, // added
 		const float focal_x, float focal_y,
 		const float tan_fovx, float tan_fovy,
 		const glm::vec3* campos,
@@ -77,7 +80,8 @@ namespace BACKWARD
 		float* dL_dcov3D,
 		float* dL_dsh,
 		glm::vec3* dL_dscale,
-		glm::vec4* dL_drot);
+		glm::vec4* dL_drot, 
+		float* dL_dtau); // added
 }
 
 #endif

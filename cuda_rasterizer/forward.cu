@@ -11,6 +11,8 @@
 
 #include "forward.h"
 #include "auxiliary.h"
+#include "helper_math.h" // added
+#include "math.h" // added
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
 namespace cg = cooperative_groups;
@@ -284,16 +286,19 @@ renderCUDA(
 	const float* __restrict__ depths,
 	const float4* __restrict__ conic_opacity,
 	float* __restrict__ out_alpha,
+	float* __restrict__ final_T, // added
 	uint32_t* __restrict__ n_contrib,
 	const float* __restrict__ bg_color,
 	float* __restrict__ out_color,
+	// const float* __restrict__ depth, // added
 	float* __restrict__ out_depth,
+	// float* __restrict__ out_alpha, // added
 	float* __restrict__ proj_2D,
 	float* __restrict__ conic_2D,
 	float* __restrict__ gs_per_pixel,
 	float* __restrict__ weight_per_gs_pixel,
-	float* __restrict__ x_mu
-	)
+	float* __restrict__ x_mu, 
+	int * __restrict__ n_touched) // added
 {
 	// Identify current tile and associated min/max pixel range.
 	auto block = cg::this_thread_block();
@@ -318,6 +323,7 @@ renderCUDA(
 	__shared__ int collected_id[BLOCK_SIZE];
 	__shared__ float2 collected_xy[BLOCK_SIZE];
 	__shared__ float4 collected_conic_opacity[BLOCK_SIZE];
+	__shared__ float collected_depth[BLOCK_SIZE]; // added
 
 	// Initialize helper variables
 	float T = 1.0f;
@@ -325,7 +331,8 @@ renderCUDA(
 	uint32_t last_contributor = 0;
 	float C[CHANNELS] = { 0 };
 	float weight = 0;
-	float D = 0;
+	// float D = 0; // removed originally
+	float D = 0.0f; // added
 
     uint32_t calc = 0;
 	// Iterate over batches until all done or range is complete
@@ -344,6 +351,7 @@ renderCUDA(
 			collected_id[block.thread_rank()] = coll_id;
 			collected_xy[block.thread_rank()] = points_xy_image[coll_id];
 			collected_conic_opacity[block.thread_rank()] = conic_opacity[coll_id];
+			collected_depth[block.thread_rank()] = depths[coll_id]; // added
 		}
 		block.sync();
 
@@ -367,20 +375,28 @@ renderCUDA(
 			// and its exponential falloff from mean.
 			// Avoid numerical instabilities (see paper appendix). 
 			float alpha = min(0.99f, con_o.w * exp(power));
-			if (alpha < 1.0f / 255.0f)
+			if (alpha < 1.0f / 255.0f) {
 				continue;
+			}
 			float test_T = T * (1 - alpha);
 			if (test_T < 0.0001f)
 			{
 				done = true;
 				continue;
 			}
-
 			// Eq. (3) from 3D Gaussian splatting paper.
-			for (int ch = 0; ch < CHANNELS; ch++)
+			for (int ch = 0; ch < CHANNELS; ch++) {
 				C[ch] += features[collected_id[j] * CHANNELS + ch] * alpha * T;
+			}
 			weight += alpha * T;
-			D += depths[collected_id[j]] * alpha * T;
+			// D += depths[collected_id[j]] * alpha * T; // removed originally
+			D += collected_depth[j] * alpha * T; // added
+
+			// added
+			// Keep track of how many pixels touched this Gaussian.
+			if (test_T > 0.5f) {
+				atomicAdd(&(n_touched[collected_id[j]]), 1);
+			}
 
 			T = test_T;
 			if (calc < 20)
@@ -402,11 +418,13 @@ renderCUDA(
 	// rendering data to the frame and auxiliary buffers.
 	if (inside)
 	{
+		final_T[pix_id] = T; // added
 		n_contrib[pix_id] = last_contributor;
 		for (int ch = 0; ch < CHANNELS; ch++)
 			out_color[ch * H * W + pix_id] = C[ch] + T * bg_color[ch];
 		out_alpha[pix_id] = weight; //1 - T;
 		out_depth[pix_id] = D;
+		// out_alpha[pix_id] = 1 - T; // out_opacity[pix_id] = 1 - T; in MonoGS, but keeping it as it is for now
 	}
 }
 
@@ -420,15 +438,19 @@ void FORWARD::render(
 	const float* depths, 
 	const float4* conic_opacity,
 	float* out_alpha,
+	float* final_T, // added
 	uint32_t* n_contrib,
 	const float* bg_color,
 	float* out_color,
+	// const float* depth, // added
 	float* out_depth,
+	// float* out_alpha, // added
 	float* proj_2D,
 	float* conic_2D,
 	float* gs_per_pixel,
 	float* weight_per_gs_pixel,
-	float* x_mu)
+	float* x_mu,
+	int* n_touched) // added
 {
 	renderCUDA<NUM_CHANNELS> << <grid, block >> > (
 		ranges,
@@ -439,15 +461,19 @@ void FORWARD::render(
 		depths,
 		conic_opacity,
 		out_alpha,
+		final_T, // added
 		n_contrib,
 		bg_color,
 		out_color,
+		// depth, // added
 		out_depth,
+		// out_alpha, // added
 		proj_2D,
 		conic_2D,
 		gs_per_pixel,
 	    weight_per_gs_pixel,
-		x_mu
+		x_mu,
+		n_touched // added
 		);
 }
 

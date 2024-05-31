@@ -50,7 +50,7 @@ namespace CudaRasterizer
 			const bool prefiltered,
 			float* out_color,
 			float* out_depth,
-			float* out_alpha,
+			float* out_alpha, // called out_opacity in MonoGS. Take care of this difference.
 			float* proj_2D,
 			float* conic_2D,
 			float* conic_2D_inv,
@@ -58,6 +58,7 @@ namespace CudaRasterizer
 			float* weight_per_gs_pixel,
 			float* x_mu,
 			int* radii = nullptr,
+			int* n_touched = nullptr, // added
 			bool debug = false);
 
 		static void backward(
@@ -74,6 +75,7 @@ namespace CudaRasterizer
 			const float* cov3D_precomp,
 			const float* viewmatrix,
 			const float* projmatrix,
+            const float* projmatrix_raw, // added
 			const float* campos,
 			const float tan_fovx, float tan_fovy,
 			const int* radii,
@@ -99,6 +101,7 @@ namespace CudaRasterizer
 			float* dL_dsh,
 			float* dL_dscale,
 			float* dL_drot,
+			float* dL_dtau, // added
 			bool debug);
 	};
 };

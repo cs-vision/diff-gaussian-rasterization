@@ -63,15 +63,19 @@ namespace FORWARD
 		const float* depths,
 		const float4* conic_opacity,
 		float* out_alpha,
+		float* final_T, // added
 		uint32_t* n_contrib,
 		const float* bg_color,
 		float* out_color,
+		// const float* depth, // added
 		float* out_depth,
+		// float* out_alpha, // added
 		float* proj_2D,
 		float* conic_2D,
 		float* gs_per_pixel,
 		float* weight_per_gs_pixel,
-		float* x_mu);
+		float* x_mu,
+		int* n_touched); // added
 }
 
 
